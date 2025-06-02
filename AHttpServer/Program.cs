@@ -16,23 +16,48 @@ try
 
     while (true)
     {
+        int offset = 0;
+
+        int dataChunk = 128;
+
         Console.WriteLine($"Listening on {port}");
 
         using TcpClient tcpClient = tcpListener.AcceptTcpClient();
 
-        byte[] data = new byte[512];
+        byte[] data = new byte[dataChunk];
 
-        int offset = 0;
+        data[dataChunk - 1] = 7;
+        
+        List<byte[]> datas = new List<byte[]>();
 
-        int count = 512;
+        int bytesRead;
 
-        tcpClient.GetStream().Read(data, offset, count);
+        do
+        {
+            bytesRead = tcpClient.GetStream().Read(data, offset, dataChunk);
+
+
+            byte[] bufferCopy = new byte[bytesRead];
+
+            Array.Copy(data, 0, bufferCopy, 0, bytesRead);
+
+            datas.Add(bufferCopy);
+
+            if(bytesRead != data.Length)
+            {
+                break;
+            }
+        }
+        while (data[dataChunk - 1] != 0);
 
         string message = string.Empty;
 
-        foreach (var item in data)
+        foreach (var item in datas)
         {
-            message += (char)item;
+            foreach (var byteItem in data)
+            {
+                message += byteItem;
+            }
         }
 
         string[] messageArray = message.Split(" ");
@@ -64,14 +89,18 @@ try
             case "DELETE":
                 tcpClient.GetStream().Write(responseBytes, 0, responseBytes.Length);
                 break;
+            default:
+                tcpClient.GetStream().Write(responseBytes, 0, responseBytes.Length);
+                break;
         }
 
         tcpClient.Close();
+
     }
 }
 catch (Exception ex)
 {
-    throw;
+    throw ex;
 }
 finally
 {
