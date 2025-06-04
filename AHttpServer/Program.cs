@@ -8,74 +8,72 @@ int port = 6851;
 IPAddress localAddr = IPAddress.Parse("127.0.0.1");
 
 TcpListener tcpListener = new TcpListener(localAddr, port);
+
 try
 {
 
     tcpListener.Start();
 
+    Console.WriteLine($"Server listening on {localAddr}:{port}");
 
     while (true)
     {
-        int offset = 0;
-
-        int dataChunk = 128;
-
-        Console.WriteLine($"Listening on {port}");
-
+        Console.WriteLine($"Waiting for connections...");
         using TcpClient tcpClient = tcpListener.AcceptTcpClient();
+        Console.WriteLine("Client connected!");
 
-        byte[] data = new byte[dataChunk];
+        // Read the request
+        NetworkStream stream = tcpClient.GetStream();
+        List<byte> allData = new List<byte>();
+        byte[] buffer = new byte[1024];
 
-        data[dataChunk - 1] = 7;
-        
-        List<byte[]> datas = new List<byte[]>();
-
-        int bytesRead;
-
-        do
+        // Read data until we have a complete HTTP request
+        while (stream.DataAvailable || allData.Count == 0)
         {
-            bytesRead = tcpClient.GetStream().Read(data, offset, dataChunk);
+            int bytesRead = stream.Read(buffer, 0, buffer.Length);
+            if (bytesRead == 0) break;
 
-
-            byte[] bufferCopy = new byte[bytesRead];
-
-            Array.Copy(data, 0, bufferCopy, 0, bytesRead);
-
-            datas.Add(bufferCopy);
-
-            if(bytesRead != data.Length)
+            for (int i = 0; i < bytesRead; i++)
             {
-                break;
+                allData.Add(buffer[i]);
             }
-        }
-        while (data[dataChunk - 1] != 0);
 
-        string message = string.Empty;
-
-        foreach (var item in datas)
-        {
-            foreach (var byteItem in data)
+            // Check if we have end of HTTP headers (\r\n\r\n)
+            if (allData.Count >= 4)
             {
-                message += byteItem;
+                byte[] lastFour = allData.GetRange(allData.Count - 4, 4).ToArray();
+                if (lastFour[0] == '\r' && lastFour[1] == '\n' &&
+                    lastFour[2] == '\r' && lastFour[3] == '\n')
+                {
+                    break;
+                }
             }
         }
 
-        string[] messageArray = message.Split(" ");
+        // Convert to string
+        string request = Encoding.UTF8.GetString(allData.ToArray());
+        Console.WriteLine($"Received request:\n{request}");
 
-        string firstWord = messageArray[0];
+        // Parse the first line to get the HTTP method
+        string[] lines = request.Split('\n');
+        string[] requestParts = lines[0].Split(' ');
+        string method = requestParts.Length > 0 ? requestParts[0].Trim() : "UNKNOWN";
 
+        // Create response
+        string responseBody = $"Hello World! Method: {method}";
         string httpResponse =
-           "HTTP/1.1 200 OK\r\n" +
-           "Content-Type: text/plain\r\n" +
-           "Content-Length: 11\r\n" +
-           "\r\n" +
-           "Hello World";
+            "HTTP/1.1 200 OK\r\n" +
+            "Content-Type: text/plain\r\n" +
+            $"Content-Length: {Encoding.UTF8.GetByteCount(responseBody)}\r\n" +
+            "Connection: close\r\n" +
+            "\r\n" +
+            responseBody;
 
         byte[] responseBytes = Encoding.UTF8.GetBytes(httpResponse);
 
 
 
-        switch (firstWord)
+        switch (method)
         {
             case "GET":
                 tcpClient.GetStream().Write(responseBytes, 0, responseBytes.Length);
@@ -100,6 +98,7 @@ try
 }
 catch (Exception ex)
 {
+    Console.WriteLine($"Error: {ex}");
     throw ex;
 }
 finally
